@@ -149,7 +149,7 @@ int main(int argc, char **argv) {
     // Create ZED Objects
     Objects objects;
     Mat point_cloud;
-    sl::Timestamp current_im_ts
+    sl::Timestamp current_im_ts;
 
     // Capture Thread (grab will run in the thread)
     exit_=false;
