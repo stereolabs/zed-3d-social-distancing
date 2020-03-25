@@ -1,5 +1,6 @@
 ﻿#include "GLViewer.hpp"
 #include <random>
+#include "cuUtils.h"
 
 #if defined(_DEBUG) && defined(_WIN32)
 #error "This sample should not be built in Debug mode, use RelWithDebInfo if you want to do step by step."
@@ -77,7 +78,7 @@ void GLViewer::init(int argc, char **argv, sl::CameraParameters param) {
         height = param.image_size.height;
     }
 
-
+    camera_parameters = param;
     windowSize.width = width;
     windowSize.height = height;
     glutInitWindowSize(windowSize.width, windowSize.height);
@@ -100,9 +101,11 @@ void GLViewer::init(int argc, char **argv, sl::CameraParameters param) {
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
 
     pointCloudSize = param.image_size;
-    pointCloud_.initialize(pointCloudSize);
+    bool err_pc = pointCloud_.initialize(pointCloudSize);
+    if (!err_pc)
+        std::cout << "ERROR: Failed to initialized point cloud"<<std::endl;
 
-    // Compile and create the shader
+    // Compile and create the shader for 3D objects
     shader.it = Shader(VERTEX_SHADER, FRAGMENT_SHADER);
     shader.MVP_Mat = glGetUniformLocation(shader.it.getProgramId(), "u_mvpMatrix");
 
@@ -181,10 +184,10 @@ void GLViewer::render() {
     }
 }
 
-void GLViewer::updateData(sl::Mat &matXYZRGBA, sl::Objects &obj,sl::Timestamp image_ts) {
+void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Timestamp image_ts) {
     if (mtx.try_lock()) {
 
-        pointCloud_.pushNewPC(matXYZRGBA);
+        pointCloud_.pushNewPC(image,depth,camera_parameters);
         BBox_obj.clear();
 
         std::vector<sl::ObjectData> objs = obj.object_list;
@@ -206,16 +209,13 @@ void GLViewer::updateData(sl::Mat &matXYZRGBA, sl::Objects &obj,sl::Timestamp im
                     BBox_obj.addBoundingBox(bb_,clr_id);
                 }
 
-                if (g_showLabel || g_showId) {
+                if (g_showLabel) {
                     if ( bb_.size()>0) {
                         objectsName.emplace_back();
-                        std::string label(sl::toString(objs[i].label).c_str());
-                        std::string name = "";
-                        if (g_showId)
-                            name += std::to_string(objs[i].id) + " - ";
-                        if(g_showLabel)
-                            name += label;
-                        objectsName.back().name = name;
+                        objectsName.back().name_lineA = "ID : "+ std::to_string(objs[i].id);
+                        std::stringstream ss_vel;
+                        ss_vel << std::fixed << std::setprecision(1) << objs[i].velocity.norm();
+                        objectsName.back().name_lineB = ss_vel.str()+" m/s";
                         objectsName.back().color = clr_id;
                         objectsName.back().position = pos_;
                         objectsName.back().position.y =(bb_[0].y + bb_[1].y + bb_[2].y + bb_[3].y)/4.f +0.2f;
@@ -283,8 +283,8 @@ void GLViewer::update() {
 
 void GLViewer::draw() {
     const sl::Transform vpMatrix = projection_; //simplification : proj * view = proj
-    float pointSize = 1.0;
-    glPointSize(pointSize);
+
+    glPointSize(1.0);
     pointCloud_.draw(vpMatrix);
 
     glUseProgram(shader.it.getProgramId());
@@ -300,7 +300,6 @@ void GLViewer::draw() {
 #endif
 
     glLineWidth(1.f);
-    glPointSize(1.0);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     BBox_obj.draw(vpMatrix);
     glUseProgram(0);
@@ -321,9 +320,15 @@ void GLViewer::printText() {
     for (auto it : objectsName) {
         auto pt2d = compute3Dprojection(it.position, vpMatrix, wnd_size);
         glColor4f(it.color.r, it.color.g, it.color.b, 1.f);
-        const auto *string = it.name.c_str();
-        glWindowPos2f(pt2d.x, pt2d.y);
+        const auto *string = it.name_lineA.c_str();
+        glWindowPos2f(pt2d.x-40, pt2d.y+20);
         int len = (int)strlen(string);
+        for (int i = 0; i < len; i++)
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, string[i]);
+
+        string = it.name_lineB.c_str();
+        glWindowPos2f(pt2d.x-40, pt2d.y);
+        len = (int)strlen(string);
         for (int i = 0; i < len; i++)
             glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, string[i]);
     }
@@ -696,45 +701,42 @@ PointCloud::~PointCloud() {
     close();
 }
 
-void checkError(cudaError_t err) {
-    if (err != cudaSuccess)
-        std::cerr << "Error: (" << err << "): " << cudaGetErrorString(err) << std::endl;
-}
-
 void PointCloud::close() {
     if (matGPU_.isInit()) {
         matGPU_.free();
-        checkError(cudaGraphicsUnmapResources(1, &bufferCudaID_, 0));
+        cudaGraphicsUnmapResources(1, &bufferCudaID_, 0);
         glDeleteBuffers(1, &bufferGLID_);
     }
 }
 
-void PointCloud::initialize(sl::Resolution res) {
+bool PointCloud::initialize(sl::Resolution res) {
     glGenBuffers(1, &bufferGLID_);
     glBindBuffer(GL_ARRAY_BUFFER, bufferGLID_);
     glBufferData(GL_ARRAY_BUFFER, res.area() * 4 * sizeof(float), 0, GL_DYNAMIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-    checkError(cudaGraphicsGLRegisterBuffer(&bufferCudaID_, bufferGLID_, cudaGraphicsRegisterFlagsNone));
-
     shader.it = Shader(POINTCLOUD_VERTEX_SHADER, POINTCLOUD_FRAGMENT_SHADER);
     shader.MVP_Mat = glGetUniformLocation(shader.it.getProgramId(), "u_mvpMatrix");
     matGPU_.alloc(res, sl::MAT_TYPE::F32_C4, sl::MEM::GPU);
 
-    checkError(cudaGraphicsMapResources(1, &bufferCudaID_, 0));
-    checkError(cudaGraphicsResourceGetMappedPointer((void**)&xyzrgbaMappedBuf_, &numBytes_, bufferCudaID_));
+    cudaError_t err = cudaGraphicsGLRegisterBuffer(&bufferCudaID_, bufferGLID_, cudaGraphicsRegisterFlagsNone);
+    err = cudaGraphicsMapResources(1, &bufferCudaID_, 0);
+    err = cudaGraphicsResourceGetMappedPointer((void**)&xyzrgbaMappedBuf_, &numBytes_, bufferCudaID_);
+    return (err==cudaSuccess);
 }
 
-void PointCloud::pushNewPC(sl::Mat &matXYZRGBA) {
+void PointCloud::pushNewPC(sl::Mat &image, sl::Mat& depth, sl::CameraParameters cam_params)
+{
     if (matGPU_.isInit()) {
-        matGPU_.setFrom(matXYZRGBA, sl::COPY_TYPE::GPU_GPU);
-        hasNewPCL_ = true;
+        // CUDA code to convert Image + Z Buffer into single point cloud
+        // It was possible to do it also on a GLSL shader, but... just a choice.
+        hasNewPCL_ = triangulateImageandZ(matGPU_,image,depth,cam_params);
     }
 }
 
 void PointCloud::update() {
     if (hasNewPCL_ && matGPU_.isInit()) {
-        checkError(cudaMemcpy(xyzrgbaMappedBuf_, matGPU_.getPtr<sl::float4>(sl::MEM::GPU), numBytes_, cudaMemcpyDeviceToDevice));
+        cudaMemcpy(xyzrgbaMappedBuf_, matGPU_.getPtr<sl::float4>(sl::MEM::GPU), numBytes_, cudaMemcpyDeviceToDevice);
         hasNewPCL_ = false;
     }
 }
@@ -745,8 +747,8 @@ void PointCloud::draw(const sl::Transform& vp) {
         glUniformMatrix4fv(shader.MVP_Mat, 1, GL_TRUE, vp.m);
 
         glBindBuffer(GL_ARRAY_BUFFER, bufferGLID_);
-        glVertexAttribPointer(Shader::ATTRIB_VERTICES_POS, 4, GL_FLOAT, GL_FALSE, 0, 0);
-        glEnableVertexAttribArray(Shader::ATTRIB_VERTICES_POS);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0);
 
         glDrawArrays(GL_POINTS, 0, matGPU_.getResolution().area());
         glBindBuffer(GL_ARRAY_BUFFER, 0);

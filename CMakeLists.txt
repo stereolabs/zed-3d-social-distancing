@@ -47,7 +47,9 @@ link_directories(${OpenCV_LIBRARY_DIRS})
 FILE(GLOB_RECURSE SRC_FILES src/*.c*)
 FILE(GLOB_RECURSE HDR_FILES include/*.h*)
 
-ADD_EXECUTABLE(${execName} ${HDR_FILES} ${SRC_FILES})
+set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -std=c++14)
+cuda_add_executable(${execName} ${HDR_FILES} ${SRC_FILES})
+
 add_definitions(-std=c++14 -O2)
 
 if (LINK_SHARED_ZED)

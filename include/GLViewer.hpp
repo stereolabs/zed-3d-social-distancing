@@ -1,4 +1,4 @@
-#ifndef __VIEWER_INCLUDE__
+﻿#ifndef __VIEWER_INCLUDE__
 #define __VIEWER_INCLUDE__
 
 #include <vector>
@@ -105,16 +105,12 @@ public:
     ~PointCloud();
 
     // Initialize Opengl and Cuda buffers
-    // Warning: must be called in the Opengl thread
-    void initialize(sl::Resolution res);
-    // Push a new point cloud
-    // Warning: can be called from any thread but the mutex "mutexData" must be locked
-    void pushNewPC(sl::Mat &matXYZRGBA);
+    bool initialize(sl::Resolution res);
+    // Push a new Image + Z buffer and transform into a point cloud
+    void pushNewPC(sl::Mat &image, sl::Mat& depth, sl::CameraParameters cam_params);
     // Update the Opengl buffer
-    // Warning: must be called in the Opengl thread
     void update();
     // Draw the point cloud
-    // Warning: must be called in the Opengl thread
     void draw(const sl::Transform& vp);
     // Close (disable update)
     void close();
@@ -131,7 +127,8 @@ private:
 
 struct ObjectClassName {
     sl::float3 position;
-    std::string name;
+    std::string name_lineA;
+    std::string name_lineB;
     sl::float3 color;
 };
 
@@ -148,7 +145,7 @@ public:
     bool isAvailable();
 
     void init(int argc, char **argv, sl::CameraParameters param);
-    void updateData(sl::Mat &matXYZRGBA, sl::Objects &objs, sl::Timestamp image_ts);
+    void updateData(sl::Mat image,sl::Mat depth, sl::Objects &obj,sl::Timestamp image_ts);
 
     void exit();
 
@@ -213,12 +210,12 @@ private:
     sl::Resolution windowSize;
     sl::Resolution pointCloudSize;
 
-    bool g_showCamera=true;
+    sl::CameraParameters camera_parameters;
     bool g_showBox=true;
     bool g_showLabel=true;
-    bool g_showId=true;
 
     float line_fading_time_ms = 1000; // 1sec
+    float max_object_distance_limit = 15.f; //15meters
 
 };
 

@@ -96,7 +96,7 @@ int main(int argc, char **argv) {
     initParameters.depth_mode = sl::DEPTH_MODE::PERFORMANCE;
     initParameters.coordinate_system = sl::COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP;
     initParameters.coordinate_units = sl::UNIT::METER;
-    initParameters.depth_maximum_distance = 10000.f; //Fake infinity
+    initParameters.depth_maximum_distance =15.f; //For object detection, Objects after 15meters may not be precise enough.
     parseArgs(argc,argv, initParameters);
 
     // Open the camera
@@ -145,10 +145,12 @@ int main(int argc, char **argv) {
     float object_confidence = 50.f;
     ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
     objectTracker_parameters_rt.detection_confidence_threshold = object_confidence;
+    objectTracker_parameters_rt.object_class_filter.clear();
+    objectTracker_parameters_rt.object_class_filter.push_back(sl::OBJECT_CLASS::PERSON);
 
     // Create ZED Objects
     Objects objects;
-    Mat point_cloud;
+    Mat pDepth,pImage;
     sl::Timestamp current_im_ts;
 
     // Capture Thread (grab will run in the thread)
@@ -158,11 +160,15 @@ int main(int argc, char **argv) {
     // Update 3D loop
     while (viewer.isAvailable()) {
         if (newFrame) {
-            zed.retrieveMeasure(point_cloud, MEASURE::XYZRGBA, MEM::GPU, resolution);
+            //Retrieve Images and Z-Buffer
+            zed.retrieveMeasure(pDepth, MEASURE::DEPTH, MEM::GPU);
+            zed.retrieveImage(pImage, VIEW::LEFT, MEM::GPU);
+            //Retrieve Objects
             zed.retrieveObjects(objects, objectTracker_parameters_rt);
             current_im_ts = zed.getTimestamp(sl::TIME_REFERENCE::IMAGE);
             newFrame=false;
-            viewer.updateData(point_cloud, objects,current_im_ts);
+            //Update GL view
+            viewer.updateData(pImage,pDepth, objects,current_im_ts);
         }
         else
             sleep_ms(1);
@@ -171,7 +177,8 @@ int main(int argc, char **argv) {
     // OUT
     exit_=true;
     runner.join();
-    point_cloud.free();
+    pImage.free();
+    pDepth.free();
     objects.object_list.clear();
 
     // Disable modules
