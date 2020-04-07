@@ -21,6 +21,11 @@
 #endif
 
 //#define WITH_TRAJECTORIES
+//#define SOCIAL_DISTANCE_DETECTION
+#ifdef SOCIAL_DISTANCE_DETECTION
+#define SOCIAL_DISTANCE_THRESHOLD 2.f // 1Meter$
+#endif
+
 
 class Shader {
 public:
@@ -216,6 +221,10 @@ private:
 
     float line_fading_time_ms = 1000; // 1sec
     float max_object_distance_limit = 15.f; //15meters
+
+    int f_count = 0;
+    bool print_message = false;
+    int print_message_count = 0;
 
 };
 

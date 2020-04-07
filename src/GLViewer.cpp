@@ -44,6 +44,19 @@ inline sl::float4 generateColorClass(int idx) {
     return clr;
 }
 
+inline sl::float4 generateColorClassFromState(bool state) {
+    sl::float4 clr;
+
+    if (state) {
+        clr = sl::float4(0.9, 0.1, 0.2,0.8);
+    }
+    else {
+        clr = sl::float4(.2f, .9f, .5f,0.8);
+    }
+
+    return clr;
+}
+
 GLViewer::GLViewer() : available(false) {
     currentInstance_ = this;
     clearInputs();
@@ -193,6 +206,40 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
         std::vector<sl::ObjectData> objs = obj.object_list;
         objectsName.clear();
 
+        //Detect if people are close to each other with less than $SOCIAL_DISTANCE_THRESHOLD meters
+#ifdef SOCIAL_DISTANCE_DETECTION
+        std::map<int,bool> dist_warn_map;
+        bool close_people_detected = false;
+        print_message=false;
+        for (int i = 0; i < objs.size(); i++)
+            dist_warn_map[ objs[i].id] = false;
+        for (int i = 0; i < objs.size(); i++)
+        {
+            for (int j= 0; j < objs.size(); j++) {
+                if (i!=j)
+                {
+                    //get both position
+                    auto posA = objs[i].position;
+                    auto posB = objs[j].position;
+
+                    //Calculate distance
+                    float distance = sqrt(pow(posA.x-posB.x,2) + pow(posA.y-posB.y,2) +pow(posA.z-posB.z,2));
+                    if (distance<SOCIAL_DISTANCE_THRESHOLD)
+                    {
+                        dist_warn_map[ objs[i].id] = true;
+                        dist_warn_map[ objs[j].id] = true;
+                        close_people_detected=true;
+                        print_message = true;
+                        print_message_count=0;
+                    }
+
+                }
+
+            }
+        }
+#endif
+
+
 
         for (int i = 0; i < objs.size(); i++) {
             if (objs[i].tracking_state != sl::OBJECT_TRACKING_STATE::SEARCHING && objs[i].id>=0) {
@@ -204,11 +251,19 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
 #ifdef WITH_TRAJECTORIES
                 trajectories[objs[i].id].push_back(ext_pos_);
 #endif
+
+#ifdef SOCIAL_DISTANCE_DETECTION
+                auto clr_id = generateColorClassFromState(dist_warn_map[objs[i].id]);
+#else
                 auto clr_id = generateColorClass(objs[i].id);
+#endif
                 if (g_showBox && bb_.size()>0) {
                     BBox_obj.addBoundingBox(bb_,clr_id);
                 }
 
+#ifdef SOCIAL_DISTANCE_DETECTION
+                g_showLabel=false;
+#endif
                 if (g_showLabel) {
                     if ( bb_.size()>0) {
                         objectsName.emplace_back();
@@ -240,7 +295,12 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
                 pts.push_back(itT->second.at(k).position);
 
             }
+
+#ifdef SOCIAL_DISTANCE_DETECTION
+            auto clr_id = generateColorClass(dist_warn_map[itT->first]);
+#else
             auto clr_id = generateColorClass(itT->first);
+#endif
             if(!pts.empty())
                 tmp.addPoints(pts,clr_id);
             trajectories_obj[itT->first] = tmp;
@@ -262,6 +322,8 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
             }
         }
 #endif
+
+        f_count ++;
         mtx.unlock();
     }
 }
@@ -303,6 +365,26 @@ void GLViewer::draw() {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     BBox_obj.draw(vpMatrix);
     glUseProgram(0);
+
+#ifdef SOCIAL_DISTANCE_DETECTION
+        if (print_message ||print_message_count<50) {
+             sl::Resolution wnd_size(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
+            glColor4f(1.0,0.0,0.0, 1.f);
+            std::string message =  std::string("WARNING : Social Distance Not Respected ! ");
+            glWindowPos2f(20, wnd_size.height - 50);
+            const char* message_c = message.c_str();
+            int len = (int)strlen(message_c);
+            for (int i = 0; i < len; i++)
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, message_c[i]);
+
+            print_message_count++;
+        }
+        if (print_message_count>50){
+            print_message=false;
+            print_message_count = 100;
+        }
+#endif
+
 }
 
 sl::float2 compute3Dprojection(sl::float3 &pt, const sl::Transform &cam, sl::Resolution wnd_size) {
