@@ -21,11 +21,24 @@
 #endif
 
 //#define WITH_TRAJECTORIES
-//#define SOCIAL_DISTANCE_DETECTION
+
+#define SOCIAL_DISTANCE_DETECTION
 #ifdef SOCIAL_DISTANCE_DETECTION
-#define SOCIAL_DISTANCE_THRESHOLD 2.f // 1Meter$
+#define SOCIAL_DISTANCE_THRESHOLD 2.f
+#define SOCIAL_DISTANCE_THRESHOLD_TIME 2.f
 #endif
 
+
+
+////////////////////////////////////////// UTILS ///////////////////////////////////////////////
+struct DistanceData {
+    unsigned long long ts_ms;
+    float distance;
+};
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////
 
 class Shader {
 public:
@@ -225,6 +238,7 @@ private:
     int f_count = 0;
     bool print_message = false;
     int print_message_count = 0;
+    std::map<int,std::deque<DistanceData>> min_dist_warn_map;
 
 };
 

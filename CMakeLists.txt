@@ -50,7 +50,14 @@ FILE(GLOB_RECURSE HDR_FILES include/*.h*)
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -std=c++14)
 cuda_add_executable(${execName} ${HDR_FILES} ${SRC_FILES})
 
-add_definitions(-std=c++14 -O2)
+add_definitions(-std=c++14 -g)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug") # Added by Walter... to be removed
+    add_definitions(-D_DEBUG)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D_GLIBCXX_DEBUG")
+    SET (CMAKE_DEBUG_POSTFIX "d")
+endif()
+
 
 if (LINK_SHARED_ZED)
     SET(ZED_LIBS ${ZED_LIBRARIES} ${CUDA_CUDA_LIBRARY} ${CUDA_CUDART_LIBRARY} ${CUDA_DEP_LIBRARIES_ZED})

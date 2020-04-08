@@ -55,3 +55,8 @@ Open a terminal in the sample directory and execute the following command:
 
 ## Options
 `#define WITH_TRAJECTORIES` in GLViewer.hpp --> Add 3D trajectories view
+`#define SOCIAL_DISTANCE_DETECTION` in GLViewer.hpp --> example of use (sadly due to the whole situation on 2020...) : See if social distance are respected and show a warning. 
+![social distance example](./docs/sc_distance.gif)
+
+
+

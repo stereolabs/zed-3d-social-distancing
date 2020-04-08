@@ -6,6 +6,37 @@
 #error "This sample should not be built in Debug mode, use RelWithDebInfo if you want to do step by step."
 #endif
 
+// Function that calculate the number of unrespected distance in the time interval [timestamp - $SOCIAL_DISTANCE_THRESHOLD_TIME seconds]
+std::map<int,float> checkPeoplesDistance(std::map<int,std::deque<DistanceData>> input, sl::Timestamp current)
+{
+    // Iterate through each ID
+    std::map<int,float> output;
+    std::map<int,std::deque<DistanceData>>::iterator itT = input.begin();
+    while (itT != input.end())
+    {
+        std::deque<DistanceData> queue = input[itT->first];
+        int count_off_distance = 0;
+        int max_count = 0;
+        for (int i=0;i<queue.size();i++)
+        {
+            unsigned long long past_ts = current.getMilliseconds() - (unsigned long long)(SOCIAL_DISTANCE_THRESHOLD_TIME * 1000.f);
+            if (queue.at(i).ts_ms> past_ts) {
+                if (queue.at(i).distance<SOCIAL_DISTANCE_THRESHOLD)
+                    count_off_distance++;
+
+                max_count++;
+            }
+        }
+        if (max_count>4)
+            output[itT->first] = 100*count_off_distance / max_count;
+        else {
+            output[itT->first] = 0;
+        }
+        itT++;
+    }
+    return output;
+}
+
 
 GLchar* VERTEX_SHADER =
         "#version 330 core\n"
@@ -208,13 +239,13 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
 
         //Detect if people are close to each other with less than $SOCIAL_DISTANCE_THRESHOLD meters
 #ifdef SOCIAL_DISTANCE_DETECTION
-        std::map<int,bool> dist_warn_map;
-        bool close_people_detected = false;
-        print_message=false;
-        for (int i = 0; i < objs.size(); i++)
-            dist_warn_map[ objs[i].id] = false;
+        // calculate min distance for this frame
         for (int i = 0; i < objs.size(); i++)
         {
+            float min_distance = 1000000.0;
+            DistanceData dist_data;
+            dist_data.ts_ms = obj.timestamp.getMilliseconds();
+            dist_data.distance = min_distance;
             for (int j= 0; j < objs.size(); j++) {
                 if (i!=j)
                 {
@@ -224,21 +255,20 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
 
                     //Calculate distance
                     float distance = sqrt(pow(posA.x-posB.x,2) + pow(posA.y-posB.y,2) +pow(posA.z-posB.z,2));
-                    if (distance<SOCIAL_DISTANCE_THRESHOLD)
+                    if (distance<min_distance)
                     {
-                        dist_warn_map[ objs[i].id] = true;
-                        dist_warn_map[ objs[j].id] = true;
-                        close_people_detected=true;
-                        print_message = true;
-                        print_message_count=0;
+                        dist_data.distance = distance;
+                        min_distance = distance;
                     }
-
                 }
-
             }
+            min_dist_warn_map[objs[i].id].push_back(dist_data);
+            if (min_dist_warn_map[objs[i].id].size()>SOCIAL_DISTANCE_THRESHOLD_TIME * 60) //make sure it does not increase to much
+                min_dist_warn_map[objs[i].id].pop_front();
         }
+        std::map<int,float> dist_warn_map;
+        dist_warn_map = checkPeoplesDistance(min_dist_warn_map,obj.timestamp);
 #endif
-
 
 
         for (int i = 0; i < objs.size(); i++) {
@@ -252,8 +282,13 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
                 trajectories[objs[i].id].push_back(ext_pos_);
 #endif
 
+
 #ifdef SOCIAL_DISTANCE_DETECTION
-                auto clr_id = generateColorClassFromState(dist_warn_map[objs[i].id]);
+                if (dist_warn_map[objs[i].id]>75) {
+                    print_message = true;
+                    print_message_count=0;
+                }
+                auto clr_id = generateColorClassFromState(dist_warn_map[objs[i].id]>75);
 #else
                 auto clr_id = generateColorClass(objs[i].id);
 #endif
@@ -261,7 +296,7 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
                     BBox_obj.addBoundingBox(bb_,clr_id);
                 }
 
-#ifdef SOCIAL_DISTANCE_DETECTION
+#if defined(SOCIAL_DISTANCE_DETECTION)
                 g_showLabel=false;
 #endif
                 if (g_showLabel) {
@@ -297,7 +332,7 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
             }
 
 #ifdef SOCIAL_DISTANCE_DETECTION
-            auto clr_id = generateColorClass(dist_warn_map[itT->first]);
+            auto clr_id = generateColorClass(dist_warn_map[itT->first]>75);
 #else
             auto clr_id = generateColorClass(itT->first);
 #endif
@@ -366,23 +401,23 @@ void GLViewer::draw() {
     BBox_obj.draw(vpMatrix);
     glUseProgram(0);
 
-#ifdef SOCIAL_DISTANCE_DETECTION
-        if (print_message ||print_message_count<50) {
-             sl::Resolution wnd_size(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
-            glColor4f(1.0,0.0,0.0, 1.f);
-            std::string message =  std::string("WARNING : Social Distance Not Respected ! ");
-            glWindowPos2f(20, wnd_size.height - 50);
-            const char* message_c = message.c_str();
-            int len = (int)strlen(message_c);
-            for (int i = 0; i < len; i++)
-                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, message_c[i]);
+#if defined(SOCIAL_DISTANCE_DETECTION)
+    if (print_message ||print_message_count<50) {
+        sl::Resolution wnd_size(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
+        glColor4f(1.0,0.0,0.0, 1.f);
+        std::string message =  std::string("WARNING : Social Distance Not Respected ! ");
+        glWindowPos2f(20, wnd_size.height - 50);
+        const char* message_c = message.c_str();
+        int len = (int)strlen(message_c);
+        for (int i = 0; i < len; i++)
+            glutBitmapCharacter(GLUT_BITMAP_HELVETICA_18, message_c[i]);
 
-            print_message_count++;
-        }
-        if (print_message_count>50){
-            print_message=false;
-            print_message_count = 100;
-        }
+        print_message_count++;
+    }
+    if (print_message_count>50){
+        print_message=false;
+        print_message_count = 100;
+    }
 #endif
 
 }
@@ -602,19 +637,25 @@ void Simple3DObject::pushToGPU() {
             glGenBuffers(3, vboID_);
         }
         glShadeModel(GL_SMOOTH);
-        glBindVertexArray(vaoID_);
-        glBindBuffer(GL_ARRAY_BUFFER, vboID_[0]);
-        glBufferData(GL_ARRAY_BUFFER, vertices_.size() * sizeof(float), &vertices_[0], isStatic_ ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
-        glVertexAttribPointer(Shader::ATTRIB_VERTICES_POS, 3, GL_FLOAT, GL_FALSE, 0, 0);
-        glEnableVertexAttribArray(Shader::ATTRIB_VERTICES_POS);
+        if (vertices_.size()>0) {
+            glBindVertexArray(vaoID_);
+            glBindBuffer(GL_ARRAY_BUFFER, vboID_[0]);
+            glBufferData(GL_ARRAY_BUFFER, vertices_.size() * sizeof(float), &vertices_[0], isStatic_ ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
+            glVertexAttribPointer(Shader::ATTRIB_VERTICES_POS, 3, GL_FLOAT, GL_FALSE, 0, 0);
+            glEnableVertexAttribArray(Shader::ATTRIB_VERTICES_POS);
+        }
 
-        glBindBuffer(GL_ARRAY_BUFFER, vboID_[1]);
-        glBufferData(GL_ARRAY_BUFFER, colors_.size() * sizeof(float), &colors_[0], isStatic_ ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
-        glVertexAttribPointer(Shader::ATTRIB_COLOR_POS, 4, GL_FLOAT, GL_FALSE, 0, 0);
-        glEnableVertexAttribArray(Shader::ATTRIB_COLOR_POS);
+        if (colors_.size()>0) {
+            glBindBuffer(GL_ARRAY_BUFFER, vboID_[1]);
+            glBufferData(GL_ARRAY_BUFFER, colors_.size() * sizeof(float), &colors_[0], isStatic_ ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
+            glVertexAttribPointer(Shader::ATTRIB_COLOR_POS, 4, GL_FLOAT, GL_FALSE, 0, 0);
+            glEnableVertexAttribArray(Shader::ATTRIB_COLOR_POS);
+        }
 
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboID_[2]);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices_.size() * sizeof(unsigned int), &indices_[0], isStatic_ ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
+        if (indices_.size()>0) {
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboID_[2]);
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices_.size() * sizeof(unsigned int), &indices_[0], isStatic_ ? GL_STATIC_DRAW : GL_DYNAMIC_DRAW);
+        }
 
         glBindVertexArray(0);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
