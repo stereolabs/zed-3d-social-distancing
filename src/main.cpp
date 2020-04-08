@@ -93,10 +93,10 @@ void run() {
 int main(int argc, char **argv) {
     // Create ZED objects
     InitParameters initParameters;
-    initParameters.depth_mode = sl::DEPTH_MODE::PERFORMANCE;
+    initParameters.depth_mode = sl::DEPTH_MODE::ULTRA;
     initParameters.coordinate_system = sl::COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP;
     initParameters.coordinate_units = sl::UNIT::METER;
-    initParameters.depth_maximum_distance =15.f; //For object detection, Objects after 15meters may not be precise enough.
+    initParameters.depth_maximum_distance =30.f; //For object detection, Objects after 15meters may not be precise enough.
     parseArgs(argc,argv, initParameters);
 
     // Open the camera
@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
     viewer.init(argc, argv, camera_parameters);
 
     // Object Detection runtime parameters
-    float object_confidence = 50.f;
+    float object_confidence = 40.f;
     ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
     objectTracker_parameters_rt.detection_confidence_threshold = object_confidence;
     objectTracker_parameters_rt.object_class_filter.clear();
@@ -169,6 +169,9 @@ int main(int argc, char **argv) {
             newFrame=false;
             //Update GL view
             viewer.updateData(pImage,pDepth, objects,current_im_ts);
+
+
+            //std::cout<<" NUmero Frame : "<<zed.getSVOPosition()<<std::endl;
         }
         else
             sleep_ms(1);

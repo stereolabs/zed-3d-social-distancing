@@ -6,33 +6,41 @@
 #error "This sample should not be built in Debug mode, use RelWithDebInfo if you want to do step by step."
 #endif
 
-// Function that calculate the number of unrespected distance in the time interval [timestamp - $SOCIAL_DISTANCE_THRESHOLD_TIME seconds]
+// Function that calculate the number of unrespected distance in the time interval [current - $SOCIAL_DISTANCE_THRESHOLD_TIME seconds]
 std::map<int,float> checkPeoplesDistance(std::map<int,std::deque<DistanceData>> input, sl::Timestamp current)
 {
     // Iterate through each ID
     std::map<int,float> output;
     std::map<int,std::deque<DistanceData>>::iterator itT = input.begin();
+    // Iterate through each current ID and Check its queue
     while (itT != input.end())
     {
+        // Get each queue for the current ID
         std::deque<DistanceData> queue = input[itT->first];
         int count_off_distance = 0;
         int max_count = 0;
+        // Iterate through the deque and calculate the percentage of frames where the distance was below the limit.
+        // This percentage indicates if the ID was close to another ID, during the $SOCIAL_DISTANCE_THRESHOLD_TIME
         for (int i=0;i<queue.size();i++)
         {
+            // Calculate the last timestamp to take into account (current - $SOCIAL_DISTANCE_THRESHOLD_TIME) in ms.
+            // If the current timestamp of the queue object is after this limit, we can take it into account for distance comparison.
             unsigned long long past_ts = current.getMilliseconds() - (unsigned long long)(SOCIAL_DISTANCE_THRESHOLD_TIME * 1000.f);
             if (queue.at(i).ts_ms> past_ts) {
                 if (queue.at(i).distance<SOCIAL_DISTANCE_THRESHOLD)
                     count_off_distance++;
 
-                max_count++;
+                max_count++; // number of total frames.
             }
         }
+
+        // Make sure we have enough detection , otherwise values are not precise enough
         if (max_count>4)
             output[itT->first] = 100*count_off_distance / max_count;
         else {
             output[itT->first] = 0;
         }
-        itT++;
+        itT++; // increment to next ID
     }
     return output;
 }
@@ -231,9 +239,11 @@ void GLViewer::render() {
 void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Timestamp image_ts) {
     if (mtx.try_lock()) {
 
+        // Update Image/Depth (into a point cloud)
         pointCloud_.pushNewPC(image,depth,camera_parameters);
-        BBox_obj.clear();
 
+        // Clear frames object
+        BBox_obj.clear();
         std::vector<sl::ObjectData> objs = obj.object_list;
         objectsName.clear();
 
@@ -242,37 +252,42 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
         // calculate min distance for this frame
         for (int i = 0; i < objs.size(); i++)
         {
-            float min_distance = 1000000.0;
+            float min_distance = 1000000.0; //Fake first distance.
             DistanceData dist_data;
             dist_data.ts_ms = obj.timestamp.getMilliseconds();
             dist_data.distance = min_distance;
+            // For each object, calculate the minimum distance to another person.
+            // Store that min distance into a Distance data object that contains the distance and the timestamp
+            // Push it into the queue (deque) for that ID
             for (int j= 0; j < objs.size(); j++) {
-                if (i!=j)
-                {
+                if (i!=j) {
                     //get both position
                     auto posA = objs[i].position;
                     auto posB = objs[j].position;
 
-                    //Calculate distance
+                    //Calculate distance (euclidean distance)
                     float distance = sqrt(pow(posA.x-posB.x,2) + pow(posA.y-posB.y,2) +pow(posA.z-posB.z,2));
-                    if (distance<min_distance)
-                    {
+                    //if the distance is below the current min distance , that's our new min distance.
+                    if (distance<min_distance) {
                         dist_data.distance = distance;
                         min_distance = distance;
                     }
                 }
             }
             min_dist_warn_map[objs[i].id].push_back(dist_data);
-            if (min_dist_warn_map[objs[i].id].size()>SOCIAL_DISTANCE_THRESHOLD_TIME * 60) //make sure it does not increase to much
+            if (min_dist_warn_map[objs[i].id].size()>SOCIAL_DISTANCE_THRESHOLD_TIME * 60) //make sure it does not increase to much. We don't need really more that the threshold time
                 min_dist_warn_map[objs[i].id].pop_front();
         }
+        // Create the map that links ID and percentage of "under distance limit".
         std::map<int,float> dist_warn_map;
         dist_warn_map = checkPeoplesDistance(min_dist_warn_map,obj.timestamp);
 #endif
 
 
+        // For each object
         for (int i = 0; i < objs.size(); i++) {
-            if (objs[i].tracking_state != sl::OBJECT_TRACKING_STATE::SEARCHING && objs[i].id>=0) {
+            // Only show tracked objects
+            if (objs[i].tracking_state == sl::OBJECT_TRACKING_STATE::OK && objs[i].id>=0) {
                 auto bb_ = objs[i].bounding_box;
                 auto pos_ = objs[i].position;
                 ObjectExtPosition ext_pos_;
@@ -284,7 +299,8 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
 
 
 #ifdef SOCIAL_DISTANCE_DETECTION
-                if (dist_warn_map[objs[i].id]>75) {
+                // Red or Green : depends on percentage of frames where a distance below the limit was detected
+                if (dist_warn_map[objs[i].id]>SOCIAL_DISTANCE_THRESHOLD_PERCENT) {
                     print_message = true;
                     print_message_count=0;
                 }
@@ -292,6 +308,7 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
 #else
                 auto clr_id = generateColorClass(objs[i].id);
 #endif
+                // Draw boxes
                 if (g_showBox && bb_.size()>0) {
                     BBox_obj.addBoundingBox(bb_,clr_id);
                 }
@@ -299,6 +316,7 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
 #if defined(SOCIAL_DISTANCE_DETECTION)
                 g_showLabel=false;
 #endif
+                // Draw Labels
                 if (g_showLabel) {
                     if ( bb_.size()>0) {
                         objectsName.emplace_back();
@@ -314,8 +332,11 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
             }
         }
 
-        //Transform current Map to 3D trajectories
+
 #ifdef WITH_TRAJECTORIES
+        // Calculate trajectories from current object positions.
+        // Store in a map with ID linked to Position/Timestamp queue
+        // The queue will be progressively removed from its last element to create a fading effect on the trajectories.
         std::map<int, std::deque<ObjectExtPosition>>::iterator itT = trajectories.begin();
         while (itT != trajectories.end())
         {
@@ -332,7 +353,7 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
             }
 
 #ifdef SOCIAL_DISTANCE_DETECTION
-            auto clr_id = generateColorClass(dist_warn_map[itT->first]>75);
+            auto clr_id = generateColorClass(dist_warn_map[itT->first]>SOCIAL_DISTANCE_THRESHOLD_PERCENT);
 #else
             auto clr_id = generateColorClass(itT->first);
 #endif
