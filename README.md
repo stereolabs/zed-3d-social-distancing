@@ -1,12 +1,16 @@
 # 3D Social Distancing using the ZED
 
-![social distance example](./docs/sc_distance.gif)
+[![social distance example](./docs/sc_distance.gif)](https://www.stereolabs.com/blog/using-3d-cameras-to-monitor-social-distancing/)
 
 This sample shows how to quantify social distancing measures. It demonstrates how to:
 
 - Detect and track objects in the scene using the ZED SDK API
 - Show the image with 3D bounding box with OpenGL
 - All processing are running on board.
+
+Please refer to our [blog post](https://www.stereolabs.com/blog/using-3d-cameras-to-monitor-social-distancing/) for more informations.
+
+
 
 ## Getting started
 
@@ -50,3 +54,5 @@ Open a terminal in the sample directory and execute the following command:
       * <optional-parameters> can be a resolution for example HD2K : `./ZED_Object_Detection_Viewer HD2K`
       * <optional-parameters> can be a SVO file for example : `./ZED_Object_Detection_Viewer path_to_svo.svo`
       * <optional-parameters> can be a IP stream input for example : `./ZED_Object_Detection_Viewer <ip>` where ip is the sender IP (Use Camera\ Streaming/Sender)
+
+[![](docs/blog_preview.jpg)](https://www.stereolabs.com/blog/using-3d-cameras-to-monitor-social-distancing/)
