@@ -1,10 +1,12 @@
-# 3D Object Detection Viewer with ZED SDK
+# 3D Social Distancing using the ZED
 
-This sample shows how to detect and track objects in space and display it. It demonstrates how to:
+![social distance example](./docs/sc_distance.gif)
+
+This sample shows how to quantify social distancing measures. It demonstrates how to:
 
 - Detect and track objects in the scene using the ZED SDK API
-- Show the image with 3D bounding box in a similar way than ZED Unity Plugin but with OpenGL.
-
+- Show the image with 3D bounding box with OpenGL
+- All processing are running on board.
 
 ## Getting started
 
@@ -48,17 +50,3 @@ Open a terminal in the sample directory and execute the following command:
       * <optional-parameters> can be a resolution for example HD2K : `./ZED_Object_Detection_Viewer HD2K`
       * <optional-parameters> can be a SVO file for example : `./ZED_Object_Detection_Viewer path_to_svo.svo`
       * <optional-parameters> can be a IP stream input for example : `./ZED_Object_Detection_Viewer <ip>` where ip is the sender IP (Use Camera\ Streaming/Sender)
-
-
-## Overview
-![Overview](./docs/overview.png)
-
-## Options
-- `#define WITH_TRAJECTORIES` in GLViewer.hpp --> Add 3D trajectories view
-
-- `#define SOCIAL_DISTANCE_DETECTION` in GLViewer.hpp --> example of use (sadly due to the whole situation on 2020...) : See if social distance are respected and show a warning. 
-
-![social distance example](./docs/sc_distance.gif)
-
-
-
