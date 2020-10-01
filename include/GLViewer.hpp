@@ -72,6 +72,7 @@ public:
     void init();
     bool isInit();
     void addPoints(std::vector<sl::float3> pts,sl::float4 base_clr);
+    void addLine(sl::float3 p1, sl::float3 p2, sl::float3 clr);
     void addBoundingBox(std::vector<sl::float3> bbox,sl::float4 base_clr);
     void pushToGPU();
     void clear();
@@ -156,6 +157,13 @@ struct ObjectExtPosition {
     sl::Timestamp timestamp;
 };
 
+
+struct DistanceIndicator {
+    sl::float2 position_2d_text;
+    std::string distance_text;
+    sl::float3 color_text;
+};
+
 // This class manages input events, window and Opengl rendering pipeline
 class GLViewer {
 public:
@@ -225,6 +233,8 @@ private:
 #endif
 
     Simple3DObject BBox_obj;
+    Simple3DObject DistanceLines_obj;
+    std::vector<DistanceIndicator> distance_indicator_list;
 
     sl::Resolution windowSize;
     sl::Resolution pointCloudSize;
@@ -232,6 +242,7 @@ private:
     sl::CameraParameters camera_parameters;
     bool g_showBox=true;
     bool g_showLabel=true;
+    bool g_showLines = true;
 
     float line_fading_time_ms = 1000; // 1sec
     float max_object_distance_limit = 15.f; //15meters

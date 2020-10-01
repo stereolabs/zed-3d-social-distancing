@@ -142,7 +142,7 @@ int main(int argc, char **argv) {
     viewer.init(argc, argv, camera_parameters);
 
     // Object Detection runtime parameters
-    float object_confidence = 40.f;
+    float object_confidence = 45.f;
     ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
     objectTracker_parameters_rt.detection_confidence_threshold = object_confidence;
     objectTracker_parameters_rt.object_class_filter.clear();

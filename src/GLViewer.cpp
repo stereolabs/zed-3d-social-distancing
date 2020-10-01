@@ -6,6 +6,36 @@
 #error "This sample should not be built in Debug mode, use RelWithDebInfo if you want to do step by step."
 #endif
 
+sl::float2 compute3Dprojection(sl::float3 &pt, const sl::Transform &cam, sl::Resolution wnd_size) {
+    sl::float4 pt4d(pt.x, pt.y, pt.z, 1.);
+    auto proj3D_cam = pt4d * cam;
+    sl::float2 proj2D;
+    proj2D.x = ((proj3D_cam.x / pt4d.w) * wnd_size.width) / (2.f * proj3D_cam.w) + wnd_size.width / 2.f;
+    proj2D.y = ((proj3D_cam.y / pt4d.w) * wnd_size.height) / (2.f * proj3D_cam.w) + wnd_size.height / 2.f;
+    return proj2D;
+}
+
+void drawRectangleSimple(float x, float y, float w, float h , sl::Resolution wnd_size, sl::float3 clr)
+{
+    glColor3f (clr.x,clr.y,clr.z);
+    glBegin(GL_POLYGON);
+    glVertex3f ((float)(2.0*x-wnd_size.width)/(float)wnd_size.width, (2.0*y-wnd_size.height)/(float)wnd_size.height, 0.0);
+    glVertex3f ((2.0*(x+w)-wnd_size.width)/(float)wnd_size.width, (2.0*y-wnd_size.height)/(float)wnd_size.height, 0.0);
+    glVertex3f ((2.0*(x+w)-wnd_size.width)/(float)wnd_size.width, (2.0*(y+h)-wnd_size.height)/(float)wnd_size.height, 0.0);
+    glVertex3f ((2.0*x-wnd_size.width)/(float)wnd_size.width, (2.0*(y+h)-wnd_size.height)/(float)wnd_size.height, 0.0);
+    glEnd();
+
+}
+
+template <typename T>
+std::string to_string_with_precision(const T a_value, const int n = 1)
+{
+    std::ostringstream out;
+    out.precision(n);
+    out << std::fixed << a_value;
+    return out.str();
+}
+
 // Function that calculate the number of unrespected distance in the time interval [current - $SOCIAL_DISTANCE_THRESHOLD_TIME seconds]
 std::map<int,float> checkPeoplesDistance(std::map<int,std::deque<DistanceData>> input, sl::Timestamp current)
 {
@@ -168,6 +198,10 @@ void GLViewer::init(int argc, char **argv, sl::CameraParameters param) {
     BBox_obj.init();
     BBox_obj.setDrawingType(GL_QUADS);
 
+    // Create the object that handles the lines between boxes
+    DistanceLines_obj.init();
+    DistanceLines_obj.setDrawingType(GL_LINES);
+
     // Clear trajectories
 #ifdef WITH_TRAJECTORIES
     trajectories.clear();
@@ -244,6 +278,8 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
 
         // Clear frames object
         BBox_obj.clear();
+        DistanceLines_obj.clear();
+        distance_indicator_list.clear();
         std::vector<sl::ObjectData> objs = obj.object_list;
         objectsName.clear();
 
@@ -311,6 +347,30 @@ void GLViewer::updateData(sl::Mat image, sl::Mat depth, sl::Objects &obj, sl::Ti
                 // Draw boxes
                 if (g_showBox && bb_.size()>0) {
                     BBox_obj.addBoundingBox(bb_,clr_id);
+
+                    //Generate lines between boxes and list of distance text to display on each lines (will be done after draw)
+                    if (g_showLines){
+                        const sl::Transform vpMatrix = projection_;
+                        sl::Resolution wnd_size(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
+                        for (int j= 0; j < objs.size(); j++) {
+                            if (i!=j && objs[j].tracking_state == sl::OBJECT_TRACKING_STATE::OK) {
+                                //get both position
+                                auto posA = objs[i].position;
+                                auto posB = objs[j].position;
+
+
+                                float distance = sqrt(pow(posA.x-posB.x,2) + pow(posA.y-posB.y,2) +pow(posA.z-posB.z,2));
+                                DistanceLines_obj.addLine(posA,posB,clr_id);
+                                DistanceIndicator ind;
+                                ind.color_text=clr_id;
+                                auto ptA_2D = compute3Dprojection(posA,vpMatrix,wnd_size);
+                                auto ptB_2D = compute3Dprojection(posB,vpMatrix,wnd_size);
+                                ind.position_2d_text = (ptA_2D+ptB_2D)/2;
+                                ind.distance_text = "D = "+to_string_with_precision(distance)+" m";
+                                distance_indicator_list.push_back(ind);
+                             }
+                        }
+                    }
                 }
 
 #if defined(SOCIAL_DISTANCE_DETECTION)
@@ -394,6 +454,7 @@ void GLViewer::update() {
     pointCloud_.update();
     // Update BBox
     BBox_obj.pushToGPU();
+    DistanceLines_obj.pushToGPU();
 
     //Clear inputs
     clearInputs();
@@ -420,6 +481,8 @@ void GLViewer::draw() {
     glLineWidth(1.f);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     BBox_obj.draw(vpMatrix);
+    glLineWidth(3.f);
+    DistanceLines_obj.draw(vpMatrix);
     glUseProgram(0);
 
 #if defined(SOCIAL_DISTANCE_DETECTION)
@@ -435,22 +498,37 @@ void GLViewer::draw() {
 
         print_message_count++;
     }
+
+
     if (print_message_count>50){
         print_message=false;
         print_message_count = 100;
     }
 #endif
 
+    if (g_showLines)
+    {
+
+        for (int i=0;i<distance_indicator_list.size();i++)
+        {
+            DistanceIndicator ind = distance_indicator_list.at(i);
+            sl::Resolution wnd_size(glutGet(GLUT_WINDOW_WIDTH), glutGet(GLUT_WINDOW_HEIGHT));
+            drawRectangleSimple(ind.position_2d_text.x-20, ind.position_2d_text.y-25,60,28,wnd_size,sl::float3(1,1,1));
+            glColor4f(ind.color_text.r,ind.color_text.g,ind.color_text.b, 1.f);
+
+
+            glWindowPos2f(ind.position_2d_text.x-20, ind.position_2d_text.y-20);
+            const char* message_c = ind.distance_text.c_str();
+            int len = (int)strlen(message_c);
+            for (int i = 0; i < len; i++)
+                glutBitmapCharacter(GLUT_BITMAP_HELVETICA_12, message_c[i]);
+        }
+        glColor4f(1.0,1.0,1.0, 1.f);
+    }
+
 }
 
-sl::float2 compute3Dprojection(sl::float3 &pt, const sl::Transform &cam, sl::Resolution wnd_size) {
-    sl::float4 pt4d(pt.x, pt.y, pt.z, 1.);
-    auto proj3D_cam = pt4d * cam;
-    sl::float2 proj2D;
-    proj2D.x = ((proj3D_cam.x / pt4d.w) * wnd_size.width) / (2.f * proj3D_cam.w) + wnd_size.width / 2.f;
-    proj2D.y = ((proj3D_cam.y / pt4d.w) * wnd_size.height) / (2.f * proj3D_cam.w) + wnd_size.height / 2.f;
-    return proj2D;
-}
+
 
 void GLViewer::printText() {
     const sl::Transform vpMatrix = projection_;
@@ -545,6 +623,30 @@ void Simple3DObject::addPoints(std::vector<sl::float3> pts,sl::float4 base_clr)
         indices_.push_back(current_size_index+1);
     }
 }
+
+void Simple3DObject::addLine(sl::float3 p1, sl::float3 p2, sl::float3 clr) {
+    vertices_.push_back(p1.x);
+    vertices_.push_back(p1.y);
+    vertices_.push_back(p1.z);
+
+    vertices_.push_back(p2.x);
+    vertices_.push_back(p2.y);
+    vertices_.push_back(p2.z);
+
+    colors_.push_back(clr.r);
+    colors_.push_back(clr.g);
+    colors_.push_back(clr.b);
+    colors_.push_back(1.f);
+
+    colors_.push_back(clr.r);
+    colors_.push_back(clr.g);
+    colors_.push_back(clr.b);
+    colors_.push_back(1.f);
+
+    indices_.push_back((int)indices_.size());
+    indices_.push_back((int)indices_.size());
+}
+
 
 void Simple3DObject::addBoundingBox(std::vector<sl::float3> bbox,sl::float4 base_clr){
 
