@@ -112,8 +112,8 @@ int main(int argc, char **argv) {
     auto camera_parameters = zed.getCameraInformation(resolution).calibration_parameters.left_cam;
 
     //Only ZED2 has object detection
-    if (zed.getCameraInformation().camera_model!=sl::MODEL::ZED2) {
-        std::cout<<" ERROR : Use ZED2 Camera only"<<std::endl;
+    if (zed.getCameraInformation().camera_model!=sl::MODEL::ZED2 && zed.getCameraInformation().camera_model!=sl::MODEL::ZED2i) {
+        std::cout<<" ERROR : Use ZED2/ZED2i Camera only"<<std::endl;
         exit(0);
     }
 
